@@ -4,11 +4,11 @@ from http import HTTPStatus
 from flask import Flask, jsonify
 from flasgger import Swagger
 
-from .application.use_cases import ListAttendancesUseCase, RegisterAttendanceUseCase
-from .domain.exceptions import DuplicateAttendanceError
-from .infrastructure.db import build_session_factory
-from .infrastructure.http import create_attendance_blueprint
-from .infrastructure.repositories import SqlAlchemyAttendanceRepository
+from .application.usecases import AttendanceOperationsUseCase
+from .domain.exception import AttendanceNotFoundError, DuplicateAttendanceError
+from .infrastructure.adapters.inbound import create_attendance_blueprint
+from .infrastructure.adapters.outbound import SqlAlchemyAttendanceRepository
+from .infrastructure.config import build_session_factory
 
 
 def create_app() -> Flask:
@@ -25,13 +25,11 @@ def create_app() -> Flask:
     session_factory = build_session_factory(database_url)
 
     repository = SqlAlchemyAttendanceRepository(session_factory)
-    register_use_case = RegisterAttendanceUseCase(repository)
-    list_use_case = ListAttendancesUseCase(repository)
+    attendance_operations_use_case = AttendanceOperationsUseCase(repository)
 
     app.register_blueprint(
         create_attendance_blueprint(
-            register_use_case=register_use_case,
-            list_use_case=list_use_case,
+            attendance_operations_use_case=attendance_operations_use_case,
         )
     )
 
@@ -49,6 +47,18 @@ def create_app() -> Flask:
                 }
             ),
             HTTPStatus.CONFLICT,
+        )
+
+    @app.errorhandler(AttendanceNotFoundError)
+    def handle_attendance_not_found(error: AttendanceNotFoundError):
+        return (
+            jsonify(
+                {
+                    "error": "not_found",
+                    "message": str(error),
+                }
+            ),
+            HTTPStatus.NOT_FOUND,
         )
 
     return app

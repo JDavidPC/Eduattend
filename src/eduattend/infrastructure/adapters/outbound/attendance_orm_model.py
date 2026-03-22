@@ -1,10 +1,10 @@
 from sqlalchemy import Date, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base
+from ...config.db import Base
 
 
-class AttendanceModel(Base):
+class AttendanceOrmModel(Base):
     __tablename__ = "attendances"
     __table_args__ = (
         UniqueConstraint(

@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from datetime import date
 
-from .entities import Attendance
+from ....domain.model.attendance import Attendance
 
 
-class AttendanceRepository(ABC):
+class IAttendanceRepository(ABC):
     @abstractmethod
     def exists_for_student_class_day(
         self,
@@ -17,6 +17,18 @@ class AttendanceRepository(ABC):
 
     @abstractmethod
     def save(self, attendance: Attendance) -> Attendance:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_id(self, attendance_id: int) -> Attendance | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self, attendance: Attendance) -> Attendance:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_by_id(self, attendance_id: int) -> bool:
         raise NotImplementedError
 
     @abstractmethod

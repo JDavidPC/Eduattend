@@ -4,3 +4,7 @@ class BusinessRuleViolation(Exception):
 
 class DuplicateAttendanceError(BusinessRuleViolation):
     """Raised when attendance is registered more than once per class per day."""
+
+
+class AttendanceNotFoundError(BusinessRuleViolation):
+    """Raised when a requested attendance record does not exist."""
