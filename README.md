@@ -1,89 +1,172 @@
-# EduAttend API - Arquitectura Hexagonal
+# EduAttend - Monorepo Hexagonal con Microservicios
 
-API en Flask para el caso de negocio de control de asistencia:
+EduAttend es un sistema de gestion academica distribuido con arquitectura hexagonal (Ports and Adapters) y enfoque de microservicios.
 
-- Un estudiante solo puede registrar asistencia una vez por clase por día.
-- Si intenta registrarse nuevamente, la API responde con conflicto de negocio (HTTP 409).
+Servicios incluidos:
 
-## Estructura de carpetas
+- Attendance Service: control de asistencias y reglas de negocio de duplicidad.
+- Auth Service: login, refresh token y logout con JWT.
+- User Service: gestion de usuarios, perfiles y roles.
+- Notification Service: consumo de eventos de faltas y envio de alertas por email.
+
+Persistencia y mensajeria:
+
+- Attendance DB: PostgreSQL (attendance_db)
+- Auth DB: PostgreSQL (auth_db)
+- User DB: PostgreSQL (user_db)
+- Notification DB: PostgreSQL (notifications_db.notification_logs)
+- Broker: RabbitMQ
+
+## Arquitectura
+
+```text
+Usuario/Cliente (Web/Mobile/Postman)
+        |
+        | HTTP/JSON
+        v
+ API Gateway (Flask/Nginx) ---- verifica token ----> Auth Service
+        |                                            |
+        | si valido                                  | consulta credenciales
+        v                                            v
+ Attendance Service -----------------------------> User Service
+        |                                            |
+        | publica evento de faltas (RabbitMQ)        |
+        v                                            |
+   Exchange: absence_events (direct)                |
+        | routing_key=absence_limit                 |
+        v                                            |
+ Notification Service -------------------------------
+        |
+        | envia correo SMTP
+        v
+ Servicio Email Externo
+```
+
+## Estructura de monorepo
 
 ```text
 registro-notas-AH/
-  run.py
-  requirements.txt
-  src/
-    eduattend/
-      app.py                          # Configuración Flask y wiring
-      application/
-        ports/                        # Puertos (Interfaces de entrada y salida)
-        usecases/                     # Casos de uso de la aplicación
-      domain/
-        exception/                    # Excepciones de negocio del dominio
-        model/                        # Entidades y modelos del dominio
-        service/                      # Servicios de dominio
-      infrastructure/
-        adapters/                     # Adaptadores de entrada (HTTP/Flask) y salida (Repositorios/SQLAlchemy)
-        config/                       # Configuración de base de datos y variables de entorno
-        mappers/                      # Mapeadores entre entidades de dominio y modelos de persistencia
+├── docker-compose.yml
+├── .env.example
+├── .env.local.example
+├── run.py
+└── src/
+       ├── attendance_service/
+    ├── auth_service/
+    ├── user_service/
+    └── notification_service/
 ```
 
-## Instalación y ejecución
+## Requisitos previos
+
+- Docker
+- Docker Compose
+
+## Instalacion
+
+1. Clonar repositorio
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.txt
-python run.py
+git clone <url-del-repositorio>
+cd registro-notas-AH
 ```
 
-Base URL local: `http://127.0.0.1:5000`
+2. Copiar variables de entorno base y secretos locales
 
-## Endpoints
+```bash
+cp .env.example .env
+cp .env.local.example .env.local
+```
 
-### Health
+3. Configurar secretos reales en .env.local
 
-- `GET /health`
+- SMTP_USER
+- SMTP_PASSWORD
 
-### Registrar asistencia
+4. Levantar infraestructura y servicios
 
-- `POST /api/v1/attendance`
-- Body JSON:
+```bash
+docker-compose up --build -d
+```
+
+5. Verificar estado
+
+```bash
+docker-compose ps
+```
+
+## Endpoints por servicio
+
+| Servicio | Metodo | Ruta | Descripcion | Requiere auth |
+|----------|--------|------|-------------|---------------|
+| Attendance | GET | /health | Health check | No |
+| Attendance | POST | /api/v1/attendance | Registrar asistencia | Si |
+| Attendance | GET | /api/v1/attendance | Listar asistencias | Si |
+| Attendance | GET | /api/v1/attendance/{id} | Obtener asistencia por id | Si |
+| Attendance | PUT | /api/v1/attendance/{id} | Actualizar asistencia | Si |
+| Attendance | DELETE | /api/v1/attendance/{id} | Eliminar asistencia | Si |
+| Auth | GET | /health | Health check | No |
+| Auth | POST | /auth/login | Iniciar sesion y generar tokens | No |
+| Auth | POST | /auth/refresh | Renovar access token | No |
+| Auth | POST | /auth/logout | Invalidar refresh token | Si |
+| User | GET | /health | Health check | No |
+| User | GET | /users | Listar usuarios | Si |
+| User | POST | /users | Crear usuario | Si |
+| User | GET | /users/{id} | Obtener usuario y perfil | Si |
+| User | PUT | /users/{id} | Actualizar usuario | Si |
+| User | PUT | /users/{id}/profile | Actualizar perfil | Si |
+| User | PUT | /users/{id}/role | Asignar rol | Si |
+
+Puertos:
+
+- Attendance Service: http://localhost:8000
+- Auth Service: http://localhost:8001
+- User Service: http://localhost:8002
+
+## RabbitMQ Admin
+
+Panel de administracion:
+
+- URL: http://localhost:15672
+- Usuario: guest
+- Password: guest
+
+## Prueba de flujo completo
+
+1. Crear usuario en Auth DB (si no existe) con password hasheado con bcrypt.
+2. Login en Auth Service.
+
+```bash
+curl -X POST http://localhost:8001/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student1@example.com","password":"123456"}'
+```
+
+3. Publicar evento de faltas en RabbitMQ (desde panel o script).
+
+Ejemplo de payload:
 
 ```json
 {
-  "student_id": "S1",
+  "event": "ABSENCE_LIMIT_REACHED",
+  "student_id": "student-001",
+  "student_email": "student1@example.com",
   "course_id": "MAT101",
-  "class_session_id": "CLASE-01",
-  "attendance_date": "2026-03-22"
+  "count": 3,
+  "timestamp": "2026-04-20T12:00:00Z"
 }
 ```
 
-Si `attendance_date` no se envía, toma la fecha actual.
-
-### Listar asistencias
-
-- `GET /api/v1/attendance`
-
-## cURL de prueba
-
-Registrar asistencia:
+4. Verificar que Notification Service procese el evento y envie el correo.
+5. Revisar logs en PostgreSQL, tabla notification_logs.
 
 ```bash
-curl -X POST http://127.0.0.1:5000/api/v1/attendance \
-  -H "Content-Type: application/json" \
-  -d "{\"student_id\":\"S1\",\"course_id\":\"MAT101\",\"class_session_id\":\"CLASE-01\",\"attendance_date\":\"2026-03-22\"}"
+docker exec -it postgres_notifications psql -U notifications_user -d notifications_db -c "SELECT * FROM notification_logs;"
 ```
 
-Intentar duplicado (debe responder 409):
+## Notas de diseño
 
-```bash
-curl -X POST http://127.0.0.1:5000/api/v1/attendance \
-  -H "Content-Type: application/json" \
-  -d "{\"student_id\":\"S1\",\"course_id\":\"MAT101\",\"class_session_id\":\"CLASE-01\",\"attendance_date\":\"2026-03-22\"}"
-```
-
-Listar:
-
-```bash
-curl http://127.0.0.1:5000/api/v1/attendance
-```
+- Domain y Application no dependen de Flask, FastAPI, SQLAlchemy, pika ni smtplib.
+- Los protocolos se definen en servicios de dominio.
+- El wiring de dependencias se concentra en app.py de cada servicio.
+- Los secretos locales viven en .env.local (ignorado por git).

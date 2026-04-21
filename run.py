@@ -1,4 +1,4 @@
-from src.eduattend.app import create_app
+from src.attendance_service.app import create_app
 
 app = create_app()
 
